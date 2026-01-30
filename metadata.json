@@ -1,0 +1,7 @@
+{
+  "name": "Lumina Social Studio",
+  "description": "An AI-powered social media content creator that transforms voice and ideas into high-converting posts and carousels with a premium, minimalist aesthetic.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
