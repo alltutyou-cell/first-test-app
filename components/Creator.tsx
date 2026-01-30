@@ -17,9 +17,10 @@ const Creator: React.FC<CreatorProps> = ({ onSave, onCancel }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiResponse, setAiResponse] = useState<any>(null);
+  const [duration, setDuration] = useState(0);
 
-  // Real Speech Recognition Setup
   const recognitionRef = useRef<any>(null);
+  const timerRef = useRef<any>(null);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -27,28 +28,27 @@ const Creator: React.FC<CreatorProps> = ({ onSave, onCancel }) => {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
-
       recognitionRef.current.onresult = (event: any) => {
-        let interimTranscript = '';
+        let transcript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            setPrompt(prev => prev + event.results[i][0].transcript + ' ');
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
+          if (event.results[i].isFinal) transcript += event.results[i][0].transcript + ' ';
         }
+        setPrompt(prev => prev + transcript);
       };
-
       recognitionRef.current.onend = () => setIsRecording(false);
     }
   }, []);
 
-  const toggleRecording = () => {
-    if (!recognitionRef.current) {
-      alert("Speech recognition not supported in this browser.");
-      return;
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
+    } else {
+      clearInterval(timerRef.current);
     }
+    return () => clearInterval(timerRef.current);
+  }, [isRecording]);
 
+  const toggleRecording = () => {
     if (isRecording) {
       recognitionRef.current.stop();
     } else {
@@ -57,211 +57,175 @@ const Creator: React.FC<CreatorProps> = ({ onSave, onCancel }) => {
     }
   };
 
+  const formatTime = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
     setIsGenerating(true);
     try {
-      const result = await generateSocialContent({
-        platform,
-        type,
-        persona,
-        prompt
-      });
+      const result = await generateSocialContent({ platform, type, persona, prompt });
       setAiResponse(result);
       setStep(2);
     } catch (err) {
-      console.error(err);
-      alert("Strategic generation failed. Please try again.");
+      alert("Strategic generation failed.");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleSaveDraft = () => {
-    const newDraft: Draft = {
-      id: Date.now().toString(),
-      platform,
-      type,
-      persona,
-      title: prompt.slice(0, 40) + "...",
-      content: type === ContentType.CAROUSEL ? aiResponse.slides : aiResponse.body,
-      engagementScore: Math.floor(Math.random() * 15) + 82, // AI "predicted" score
-      strategyHint: aiResponse.strategy,
-      createdAt: new Date()
-    };
-    onSave(newDraft);
-  };
-
   return (
-    <div className="px-6 py-2 overflow-y-auto max-h-[85vh] no-scrollbar">
-      {step === 1 ? (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
-          <div className="mb-10">
-            <h2 className="text-4xl font-bold mb-3 tracking-tight serif-font italic">Speak your mind</h2>
-            <p className="text-gray-400 text-sm leading-relaxed max-w-[280px]">
-              Our AI strategist will refine your raw thoughts into a masterpiece.
-            </p>
-          </div>
-
-          <div className="bg-white rounded-[44px] p-8 shadow-2xl mb-10 relative border border-gray-100">
-             <div className="flex items-center justify-between mb-8">
-                <button 
-                  onClick={toggleRecording} 
-                  className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 group ${
-                    isRecording ? 'bg-red-500 scale-110 shadow-red-200' : 'bg-black text-white hover:scale-105'
-                  }`}
-                >
-                   {isRecording ? (
-                     <div className="flex gap-1 items-center">
-                        <div className="w-1.5 h-6 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                        <div className="w-1.5 h-8 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                        <div className="w-1.5 h-6 bg-white rounded-full animate-bounce" style={{animationDelay: '0.3s'}}></div>
-                     </div>
-                   ) : (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-                   )}
-                </button>
-                <div className="flex-1 px-6">
-                   <div className="h-1 w-full bg-gray-50 rounded-full overflow-hidden">
-                      <div className={`h-full bg-black transition-all duration-500 ${isRecording ? 'w-full opacity-100' : 'w-0 opacity-0'}`}></div>
-                   </div>
-                </div>
-                <span className={`text-[10px] font-bold font-mono transition-colors ${isRecording ? 'text-red-500' : 'text-gray-300'}`}>
-                  {isRecording ? 'REC' : 'IDLE'}
-                </span>
-             </div>
-
-             <textarea 
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Talk to me about your next big idea..."
-                className="w-full min-h-[140px] bg-transparent resize-none border-none focus:ring-0 text-xl leading-relaxed placeholder:text-gray-200 font-medium"
-             />
-          </div>
-
-          <div className="space-y-8">
-            <div className="flex flex-col gap-4">
-               <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">The Brand Persona</span>
-               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-                  {Object.values(Persona).map(p => (
-                    <button 
-                      key={p} 
-                      onClick={() => setPersona(p)}
-                      className={`px-6 py-4 rounded-[24px] text-xs font-bold transition-all whitespace-nowrap border-2 ${
-                        persona === p ? 'bg-black text-white border-black shadow-xl' : 'bg-white text-gray-400 border-transparent shadow-sm'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-               <div className="flex flex-col gap-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">Platform</span>
-                  <select 
-                    value={platform} 
-                    onChange={(e) => setPlatform(e.target.value as Platform)}
-                    className="bg-white border-none rounded-2xl p-4 text-xs font-bold shadow-sm focus:ring-1 focus:ring-black"
-                  >
-                    {Object.values(Platform).map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-               </div>
-               <div className="flex flex-col gap-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">Format</span>
-                  <select 
-                    value={type} 
-                    onChange={(e) => setType(e.target.value as ContentType)}
-                    className="bg-white border-none rounded-2xl p-4 text-xs font-bold shadow-sm focus:ring-1 focus:ring-black"
-                  >
-                    {Object.values(ContentType).map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-               </div>
-            </div>
-
-            <button 
-              disabled={isGenerating || !prompt}
-              onClick={handleGenerate}
-              className="w-full bg-black text-white py-7 rounded-[32px] font-bold text-xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.3)] disabled:opacity-50 hover:scale-[1.02] transition-transform active:scale-95 flex items-center justify-center gap-3"
-            >
-              {isGenerating ? (
-                <>
-                  <div className="w-6 h-6 border-3 border-white/20 border-t-white rounded-full animate-spin"></div>
-                  AI Strategizing...
-                </>
-              ) : (
-                <>
-                  Generate Content
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                </>
-              )}
-            </button>
-          </div>
+    <div className="flex flex-col h-full gap-8">
+      <div className="flex justify-between items-end border-b border-black pb-8">
+        <div>
+          <span className="mono-font text-gray-400 block mb-2">Input_Interface</span>
+          <h1 className="serif-font text-7xl leading-none">Voice Capture</h1>
         </div>
-      ) : (
-        <div className="animate-in fade-in slide-in-from-right-4 duration-500 pb-24">
-           <div className="mb-10 flex justify-between items-end">
-             <div>
-              <h2 className="text-4xl font-bold mb-2 tracking-tight serif-font italic">Review</h2>
-              <p className="text-gray-400 text-sm">Strategic {type} by {persona}.</p>
-             </div>
-             <div className="bg-green-50 text-green-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border border-green-100">
-                High Potential
-             </div>
-          </div>
+        <button onClick={onCancel} className="mono-font border border-black px-6 py-2 hover:bg-black hover:text-white transition-all">
+          [ Back ]
+        </button>
+      </div>
 
-          <div className="bg-black/5 rounded-[40px] p-6 mb-8 border border-black/5">
-             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] mb-4 text-gray-400">The Strategy</h4>
-             <p className="text-sm font-medium leading-relaxed italic text-gray-600">"{aiResponse.strategy}"</p>
-          </div>
-
-          {type === ContentType.CAROUSEL && aiResponse.slides ? (
-            <div className="flex gap-5 overflow-x-auto pb-10 snap-x no-scrollbar">
-               {aiResponse.slides.map((slide: string, idx: number) => (
-                 <div 
-                   key={idx} 
-                   className={`flex-shrink-0 w-[300px] h-[480px] rounded-[48px] shadow-2xl p-10 flex flex-col snap-center relative overflow-hidden transition-all hover:scale-[1.02] ${
-                     idx % 2 === 0 ? 'bg-white text-black' : 'bg-black text-white'
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-12 overflow-hidden">
+        {/* Input Pane */}
+        <div className="flex flex-col gap-8 h-full">
+           <div className="border border-black p-10 bg-white relative">
+              <div className="absolute top-4 right-4 mono-font text-[9px] text-gray-400">STATUS: {isRecording ? 'LIVE' : 'STANDBY'}</div>
+              
+              <div className="flex items-center gap-8 mb-12">
+                 <button 
+                   onClick={toggleRecording}
+                   className={`w-16 h-16 border border-black flex items-center justify-center transition-all ${
+                     isRecording ? 'bg-black text-[#E1FF6B]' : 'bg-white text-black hover:bg-black hover:text-white'
                    }`}
                  >
-                    <div className={`absolute top-0 right-0 p-8 opacity-5 text-9xl font-black ${idx % 2 === 0 ? 'text-black' : 'text-white'}`}>
-                       {idx + 1}
-                    </div>
-                    <div className="z-10 h-full flex flex-col">
-                       <div className="serif-font text-3xl italic mb-10 opacity-60">Lumina</div>
-                       <p className="text-2xl font-bold leading-[1.3] tracking-tight">{slide}</p>
-                       <div className="mt-auto pt-8 flex justify-between items-center text-[10px] font-black uppercase tracking-widest opacity-40">
-                          <span>Slide {idx + 1}</span>
-                          <span>{platform} &bull; {idx === aiResponse.slides.length - 1 ? 'CTA' : 'Value'}</span>
-                       </div>
-                    </div>
+                    {isRecording ? <div className="w-4 h-4 bg-[#E1FF6B]"></div> : <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
+                 </button>
+                 <div className="flex-1 h-12 flex items-center gap-1 overflow-hidden px-4 border-l border-black">
+                    {Array.from({length: 40}).map((_, i) => (
+                      <div key={i} className="w-1 bg-black" style={{height: isRecording ? `${Math.random() * 100}%` : '2px'}}></div>
+                    ))}
                  </div>
-               ))}
-            </div>
-          ) : (
-            <div className="bg-white rounded-[44px] p-10 shadow-2xl mb-10 border border-gray-50 relative">
-               <div className="absolute top-0 left-0 w-full h-2 bg-[#E66432] rounded-t-[44px] opacity-20"></div>
-               <p className="text-xl font-medium leading-relaxed whitespace-pre-wrap">{aiResponse.body}</p>
-            </div>
-          )}
+                 <span className="mono-font text-xl tabular-nums">{formatTime(duration)}</span>
+              </div>
+              
+              <span className="mono-font block mb-4 border-b border-black/10 pb-1">Raw_Text_Input</span>
+              <textarea 
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                className="w-full bg-transparent border-none focus:ring-0 text-xl font-medium placeholder:text-gray-200 min-h-[200px]"
+                placeholder="Initialize thoughts here..."
+              />
+           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-             <button 
-               onClick={() => setStep(1)}
-               className="bg-white text-black py-6 rounded-[32px] font-bold shadow-sm border border-gray-100 hover:bg-gray-50 transition-colors"
-             >
-               Refine
-             </button>
-             <button 
-               onClick={handleSaveDraft}
-               className="bg-[#E66432] text-white py-6 rounded-[32px] font-bold shadow-xl shadow-orange-100 hover:scale-[1.02] transition-transform"
-             >
-               Save Draft
-             </button>
-          </div>
+           <div className="grid grid-cols-2 gap-6">
+              <div className="flex flex-col gap-3">
+                 <span className="mono-font">Target_Platform</span>
+                 <select 
+                   value={platform} 
+                   onChange={(e) => setPlatform(e.target.value as Platform)}
+                   className="border border-black bg-white p-4 mono-font text-[10px] outline-none appearance-none"
+                 >
+                    {Object.values(Platform).map(p => <option key={p} value={p}>{p}</option>)}
+                 </select>
+              </div>
+              <div className="flex flex-col gap-3">
+                 <span className="mono-font">Asset_Type</span>
+                 <select 
+                   value={type} 
+                   onChange={(e) => setType(e.target.value as ContentType)}
+                   className="border border-black bg-white p-4 mono-font text-[10px] outline-none appearance-none"
+                 >
+                    {Object.values(ContentType).map(t => <option key={t} value={t}>{t}</option>)}
+                 </select>
+              </div>
+           </div>
+
+           <button 
+             onClick={handleGenerate}
+             disabled={!prompt || isGenerating}
+             className="bg-black text-white py-6 mono-font font-bold text-xl hover:bg-[#E1FF6B] hover:text-black border border-black transition-all disabled:opacity-20 mt-auto"
+           >
+             {isGenerating ? '[ PROCESSING... ]' : '[ INITIALIZE GENERATION ]'}
+           </button>
         </div>
-      )}
+
+        {/* Output Pane */}
+        <div className="border border-black bg-white p-10 overflow-y-auto no-scrollbar relative flex flex-col">
+           <div className="absolute top-4 right-4 mono-font text-[9px] text-gray-400">OUTPUT_PREVIEW</div>
+           
+           {!aiResponse && !isGenerating ? (
+             <div className="flex-1 flex flex-col items-center justify-center opacity-10 gap-4">
+                <div className="w-32 h-32 border-2 border-dashed border-black rounded-full animate-spin flex items-center justify-center">
+                   <div className="w-20 h-20 border border-black"></div>
+                </div>
+                <span className="mono-font">Awaiting stream...</span>
+             </div>
+           ) : isGenerating ? (
+             <div className="flex-1 flex flex-col gap-8">
+                <div className="w-full h-1 bg-gray-100 relative overflow-hidden">
+                   <div className="absolute inset-0 bg-black animate-[scanline_2s_linear_infinite]"></div>
+                </div>
+                <div className="space-y-4">
+                   {[1,2,3,4,5].map(i => <div key={i} className="h-4 bg-gray-50 rounded-sm w-full"></div>)}
+                </div>
+             </div>
+           ) : (
+             <div className="animate-in fade-in duration-700">
+                <div className="mb-8 pb-4 border-b border-black/10">
+                   <span className="mono-font block mb-1">Generated: {platform}</span>
+                   <h3 className="serif-font text-4xl">{prompt.slice(0, 30)}...</h3>
+                </div>
+
+                {type === ContentType.CAROUSEL ? (
+                   <div className="flex flex-col gap-6">
+                      {aiResponse.slides?.map((slide: string, i: number) => (
+                        <div key={i} className="border border-black p-8 bg-[#F5F5F5] relative">
+                           <span className="absolute top-2 right-4 mono-font text-[9px]">0{i+1}</span>
+                           <p className="serif-font text-2xl leading-tight">{slide}</p>
+                        </div>
+                      ))}
+                   </div>
+                ) : (
+                   <div className="p-8 border border-black bg-white">
+                      <p className="serif-font text-2xl leading-relaxed italic">"{aiResponse.body}"</p>
+                   </div>
+                )}
+
+                <div className="mt-8 p-6 bg-black text-[#E1FF6B] mono-font text-[10px]">
+                   <span className="block mb-2 font-bold">[ STRATEGY_REPORT ]</span>
+                   {aiResponse.strategy}
+                </div>
+
+                <div className="flex gap-4 mt-12">
+                   <button 
+                     onClick={() => setStep(1)} 
+                     className="flex-1 border border-black py-4 mono-font hover:bg-black hover:text-white transition-all"
+                   >
+                      [ Re-init ]
+                   </button>
+                   <button 
+                     onClick={() => onSave({
+                       id: Date.now().toString(),
+                       platform, type, persona,
+                       title: prompt.slice(0, 40) + "...",
+                       content: type === ContentType.CAROUSEL ? aiResponse.slides : aiResponse.body,
+                       engagementScore: 98,
+                       strategyHint: aiResponse.strategy,
+                       createdAt: new Date()
+                     })} 
+                     className="flex-1 bg-black text-white py-4 mono-font hover:bg-white hover:text-black border border-black transition-all"
+                   >
+                      [ Commit ]
+                   </button>
+                </div>
+             </div>
+           )}
+        </div>
+      </div>
     </div>
   );
 };
